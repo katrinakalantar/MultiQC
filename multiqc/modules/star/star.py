@@ -10,6 +10,7 @@ import re
 
 from multiqc import config
 from multiqc.plots import bargraph
+from multiqc.plots import scatter
 from multiqc.modules.base_module import BaseMultiqcModule
 
 # Initialise the logger
@@ -96,6 +97,15 @@ class MultiqcModule(BaseMultiqcModule):
                 plot = self.star_genecount_chart()
             )
 
+        if len(self.star_genecounts_unstranded) > 0:
+            self.add_section (
+                name = 'Transcript Counts',
+                anchor = 'star_transcriptCounts',
+                description = "Statistics from results generated using <code>--quantMode GeneCounts</code>. ",
+                plot = self.star_transcript_counts_chart()
+            )
+
+
 
     def parse_star_report (self, raw_data):
         """ Parse the final STAR log file. """
@@ -153,12 +163,14 @@ class MultiqcModule(BaseMultiqcModule):
         """ Parse a STAR gene counts output file """
         # Three numeric columns: unstranded, stranded/first-strand, stranded/second-strand
         keys = [ 'N_unmapped', 'N_multimapping', 'N_noFeature', 'N_ambiguous' ]
-        unstranded = { 'N_genes': 0 }
-        first_strand = { 'N_genes': 0 }
-        second_strand = { 'N_genes': 0 }
+        unstranded = { 'N_genes': 0, 'N_genes_uniq': 0 }
+        first_strand = { 'N_genes': 0, 'N_genes_uniq': 0 }
+        second_strand = { 'N_genes': 0, 'N_genes_uniq': 0 }
         num_errors = 0
         num_genes = 0
+        #print(f['f'])
         for l in f['f']:
+            #print(l) # I think this is printing each line
             s = l.split("\t")
             try:
                 for i in [1,2,3]:
@@ -172,6 +184,12 @@ class MultiqcModule(BaseMultiqcModule):
                     first_strand['N_genes'] += s[2]
                     second_strand['N_genes'] += s[3]
                     num_genes += 1
+
+                    unstranded['N_genes_uniq'] += int(s[1] > 0)
+                    first_strand['N_genes_uniq'] += int(s[2] > 0)
+                    second_strand['N_genes_uniq'] += int(s[3] > 0)
+
+
             except IndexError:
                 # Tolerate a few errors in case there is something random added at the top of the file
                 num_errors += 1
@@ -182,6 +200,16 @@ class MultiqcModule(BaseMultiqcModule):
             return { 'unstranded': unstranded, 'first_strand': first_strand, 'second_strand': second_strand }
         else:
             return None
+
+
+    '''
+    def parse_transcript_counts(self, f):
+        """ Parse the transcript counts """
+
+        for l in f['f']:
+            print(l)
+    '''
+
 
     def star_stats_table(self):
         """ Take the parsed stats from the STAR report and add them to the
@@ -253,3 +281,32 @@ class MultiqcModule(BaseMultiqcModule):
             self.star_genecounts_second_strand
         ]
         return bargraph.plot(datasets, [keys,keys,keys,keys], pconfig)
+
+
+    def star_transcript_counts_chart (self):
+        """ Make a scatterplot of unique transcripts identified by total counts """
+
+        # Config for the plot
+        pconfig = {
+            'id': 'star_transcript_counts',
+            'title': 'STAR: Unique Transcripts',
+            'data_labels': [{'name':'Unstranded','ylab':'# Reads','xlab':'# Unique Transcripts'},
+                    {'name':'Same Stranded','ylab':'# Reads','xlab':'# Unique Transcripts'},
+                    {'name':'Reverse Stranded','ylab':'# Reads','xlab':'# Unique Transcripts'}],# ['Unstranded','Same Stranded','Reverse Stranded'],
+            'marker_colour': 'rgba(0, 172, 230, .8)', # string, base colour of points (recommend rgba / semi-transparent)
+            'marker_size': 5,               # int, size of points
+            'marker_line_colour': '#999',   # string, colour of point border
+            'marker_line_width': 1,         # int, width of point border
+            'square': False                 # Force the plot to stay square? (Maintain aspect ratio)
+        }
+
+        datasets = [
+            self.star_genecounts_unstranded,
+            self.star_genecounts_first_strand,
+            self.star_genecounts_second_strand
+        ]
+        return scatter.plot(datasets, 'N_genes_uniq', 'N_genes', pconfig)
+
+
+
+

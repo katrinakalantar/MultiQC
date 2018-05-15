@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 letters = 'abcdefghijklmnopqrstuvwxyz'
 
-def plot (data, pconfig=None):
+def plot (data, x='x', y='y', pconfig=None):
     """ Plot a scatter plot with X,Y data.
     :param data: 2D dict, first keys as sample names, then x:y data pairs
     :param pconfig: optional dict with config key:value pairs. See CONTRIBUTING.md
@@ -32,17 +32,17 @@ def plot (data, pconfig=None):
             if type(ds[s_name]) is not list:
                 ds[s_name] = [ ds[s_name] ]
             for k in ds[s_name]:
-                if k['x'] is not None:
-                    if 'xmax' in pconfig and float(k['x']) > float(pconfig['xmax']):
+                if k[x] is not None:
+                    if 'xmax' in pconfig and float(k[x]) > float(pconfig['xmax']):
                         continue
-                    if 'xmin' in pconfig and float(k['x']) < float(pconfig['xmin']):
+                    if 'xmin' in pconfig and float(k[x]) < float(pconfig['xmin']):
                         continue
-                if k['y'] is not None:
-                    if 'ymax' in pconfig and float(k['y']) > float(pconfig['ymax']):
+                if k[y] is not None:
+                    if 'ymax' in pconfig and float(k[y]) > float(pconfig['ymax']):
                         continue
-                    if 'ymin' in pconfig and float(k['y']) < float(pconfig['ymin']):
+                    if 'ymin' in pconfig and float(k[y]) < float(pconfig['ymin']):
                         continue
-                this_series = { 'x': k['x'], 'y': k['y'] }
+                this_series = { 'x': k[x], 'y': k[y] }
                 try:
                     this_series['name'] = "{}: {}".format(s_name, k['name'])
                 except KeyError:
