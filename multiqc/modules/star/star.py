@@ -7,6 +7,7 @@ from collections import OrderedDict
 import logging
 import os
 import re
+import pandas as pd
 
 from multiqc import config
 from multiqc.plots import bargraph
@@ -20,6 +21,10 @@ class MultiqcModule(BaseMultiqcModule):
 
     def __init__(self):
 
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        genemap = pd.read_csv('/'.join(dir_path.split('/')[0:-2]) + '/utils/module_star_genemap.tsv', sep="\t", index_col = 0)
+        genemap_dict = dict(zip(genemap.index, genemap.gene_biotype))
+        
         # Initialise the parent object
         super(MultiqcModule, self).__init__(name='STAR', anchor='star',
         href="https://github.com/alexdobin/STAR",
@@ -43,7 +48,7 @@ class MultiqcModule(BaseMultiqcModule):
         self.star_genecounts_first_strand = dict()
         self.star_genecounts_second_strand = dict()
         for f in self.find_log_files('star/genecounts', filehandles=True):
-            parsed_data = self.parse_star_genecount_report(f)
+            parsed_data = self.parse_star_genecount_report(f, genemap = genemap_dict)
             if parsed_data is not None:
                 s_name = f['s_name']
                 if s_name == '' or s_name == 'ReadsPerGene.out.tab':
@@ -105,6 +110,13 @@ class MultiqcModule(BaseMultiqcModule):
                 plot = self.star_transcript_counts_chart()
             )
 
+        if len(self.star_genecounts_unstranded) > 0:
+            self.add_section (
+                name = 'Biotype Distribution',
+                anchor = 'star_biotype_counts',
+                description = "Statistics from results generated using <code>--quantMode GeneCounts</code>. ",
+                plot = self.star_biotype_chart()
+            )
 
 
     def parse_star_report (self, raw_data):
@@ -159,18 +171,23 @@ class MultiqcModule(BaseMultiqcModule):
         if len(parsed_data) == 0: return None
         return parsed_data
 
-    def parse_star_genecount_report(self, f):
+    def parse_star_genecount_report(self, f, genemap):
         """ Parse a STAR gene counts output file """
         # Three numeric columns: unstranded, stranded/first-strand, stranded/second-strand
         keys = [ 'N_unmapped', 'N_multimapping', 'N_noFeature', 'N_ambiguous' ]
-        unstranded = { 'N_genes': 0, 'N_genes_uniq': 0 }
-        first_strand = { 'N_genes': 0, 'N_genes_uniq': 0 }
-        second_strand = { 'N_genes': 0, 'N_genes_uniq': 0 }
+        unstranded = { 'N_genes': 0, 'N_genes_uniq': 0, 'other' : 0, 'unknown_type' : 0 }
+        first_strand = { 'N_genes': 0, 'N_genes_uniq': 0, 'other' : 0, 'unknown_type' : 0 }
+        second_strand = { 'N_genes': 0, 'N_genes_uniq': 0, 'other' : 0, 'unknown_type' : 0 }
+
+        gene_types_of_interest = ['protein_coding','processed_pseudogene','lincRNA','antisense','unprocessed_pseudogene','misc_RNA','snRNA','miRNA','rRNA']
+        for i in gene_types_of_interest:
+            unstranded[i] = 0
+            first_strand[i] = 0
+            second_strand[i] = 0
+
         num_errors = 0
         num_genes = 0
-        #print(f['f'])
-        for l in f['f']:
-            #print(l) # I think this is printing each line
+        for l in f['f']:  # this is iterating through each line
             s = l.split("\t")
             try:
                 for i in [1,2,3]:
@@ -180,6 +197,26 @@ class MultiqcModule(BaseMultiqcModule):
                     first_strand[s[0]] = s[2]
                     second_strand[s[0]] = s[3]
                 else:
+
+                    #'''
+                    # get data on whether this is protein-coding or not
+                    try:
+                        ensemblID = s[0].split(".")[0]
+                        gene_type = genemap[ensemblID]  #str(genemap.loc[ensemblID]['gene_biotype'])
+                        if gene_type in gene_types_of_interest:
+                            unstranded[gene_type] += s[1]
+                            first_strand[gene_type] += s[2]
+                            second_strand[gene_type] += s[3]
+                        else:
+                            unstranded['other'] += s[1] # biotype is known, but not in list of interesting types
+                            first_strand['other'] += s[2]
+                            second_strand['other'] += s[3]
+                    except:
+                        unstranded['unknown_type'] += s[1] # ENSEMBL ID not in reference
+                        first_strand['unknown_type'] += s[2]
+                        second_strand['unknown_type'] += s[3]
+                    #'''
+
                     unstranded['N_genes'] += s[1]
                     first_strand['N_genes'] += s[2]
                     second_strand['N_genes'] += s[3]
@@ -200,16 +237,6 @@ class MultiqcModule(BaseMultiqcModule):
             return { 'unstranded': unstranded, 'first_strand': first_strand, 'second_strand': second_strand }
         else:
             return None
-
-
-    '''
-    def parse_transcript_counts(self, f):
-        """ Parse the transcript counts """
-
-        for l in f['f']:
-            print(l)
-    '''
-
 
     def star_stats_table(self):
         """ Take the parsed stats from the STAR report and add them to the
@@ -281,6 +308,42 @@ class MultiqcModule(BaseMultiqcModule):
             self.star_genecounts_second_strand
         ]
         return bargraph.plot(datasets, [keys,keys,keys,keys], pconfig)
+
+    def star_biotype_chart (self):
+        """ Make a plot of gene biotypes - to ultimately identify the % protein-coding """
+
+        # Specify the order of the different possible categories
+        '''
+
+        '''
+        keys = OrderedDict()
+        keys['protein_coding'] =        { 'color': '#16B6C9', 'name': 'Protein Coding' }
+        keys['processed_pseudogene'] =    { 'color': '#B4B41F', 'name': 'Processed Pseudogene' }
+        keys['lincRNA'] =    { 'color': '#DF6CBA', 'name': 'lincRNA' }
+        keys['antisense'] =    { 'color': '#1C6CAB', 'name': 'antisense' }
+        keys['unprocessed_pseudogene'] = {'color': '#E17311', 'name':'Unprocessed Pseudogene'}
+        keys['misc_RNA'] =    { 'color': '#B4B41F', 'name': 'miscRNA' }
+        keys['snRNA'] =    { 'color': '#DF6CBA', 'name': 'snRNA' }
+        keys['miRNA'] =    { 'color': '#1C6CAB', 'name': 'miRNA' }
+        keys['rRNA'] = {'color': '#E17311', 'name':'rRNA'}
+        keys['other'] =    { 'color': '#747474', 'name': 'other' }
+        keys['unknown_type'] =    { 'color': '#747474', 'name': 'unknown' }
+        
+
+        # Config for the plot
+        pconfig = {
+            'id': 'star_gene_counts',
+            'title': 'STAR: Gene Counts',
+            'ylab': '# Reads',
+            'cpswitch_counts_label': 'Number of Reads',
+            'data_labels': ['Unstranded','Same Stranded','Reverse Stranded']
+        }
+        datasets = [
+            self.star_genecounts_unstranded,
+            self.star_genecounts_first_strand,
+            self.star_genecounts_second_strand
+        ]
+        return bargraph.plot(datasets,[keys,keys,keys,keys], pconfig)        
 
 
     def star_transcript_counts_chart (self):

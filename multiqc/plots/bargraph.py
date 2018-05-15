@@ -41,6 +41,7 @@ def get_template_mod():
     return _template_mod
 
 def plot (data, cats=None, pconfig=None):
+
     """ Plot a horizontal bar graph. Expects a 2D dict of sample
     data. Also can take info about categories. There are quite a
     few variants of how to use this function, see the docs for details.
@@ -132,12 +133,21 @@ def plot (data, cats=None, pconfig=None):
                 if s not in sample_dcount:
                     sample_dcount[s] = 0
                 try:
-                    thisdata.append(float(d[s][c]))
-                    catcount += 1
-                    sample_dcount[s] += 1
+
+                    if(isinstance(d[s],dict)):
+                        thisdata.append(float(d[s][c]))
+                        catcount += 1
+                        sample_dcount[s] += 1
+                    elif(isinstance(d[s],list)):
+                        thisdata.append(float(d[s][0][c]))
+                        catcount += 1
+                        sample_dcount[s] += 1
+
                 except (KeyError, ValueError):
                     # Pad with NaNs when we have missing categories in a sample
                     thisdata.append(float('nan'))
+
+            #print(thisdata)
             if catcount > 0:
                 if pconfig.get('hide_zero_cats', True) is False or max(x for x in thisdata if not math.isnan(x)) > 0:
                     thisdict = { 'name': cats[idx][c]['name'], 'data': thisdata }
